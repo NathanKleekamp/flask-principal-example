@@ -1,19 +1,13 @@
 # -*- coding: utf-8 -*-
 
-import hashlib
-
-from uuid import uuid4
-
-from . import db, login_serializer
+from . import db
+from .utils import md5, uuid4, login_serializer
 
 
-def md5(data):
-    return hashlib.md5(data).hexdigest()
-
-
-def uuid_gen():
-    '''Used to generate random UUID for user'''
-    return str(uuid4().hex)
+roles_users = db.Table('roles_users',
+    db.Column('user_id', db.Integer(), db.ForeignKey('user.id')),
+    db.Column('role_id', db.Integer(), db.ForeignKey('role.id'))
+)
 
 
 class User(db.Model):
@@ -21,12 +15,14 @@ class User(db.Model):
     # Don't expose UUID to public or it will defeat the encrypted cookie for
     # Flask-Login
     uuid = db.Column(db.String(34), nullable=False, unique=True,
-                     default=uuid_gen)
+                     default=uuid4)
     fb_id = db.Column(db.BigInteger, nullable=False, unique=True)
     name = db.Column(db.String(64), nullable=False)
     email = db.Column(db.String(64), nullable=False)
     admin = db.Column(db.Boolean)
     active = db.Column(db.Boolean, nullable=False, default=True)
+    roles = db.relationship('Role', secondary=roles_users,
+                            backref=db.backref('users', lazy='dynamic'))
 
     def __init__(self, fb_id, name, email):
         self.fb_id = fb_id
@@ -36,13 +32,13 @@ class User(db.Model):
     def __repr__(self):
         return '< User: {0} >'.format(self.name)
 
-    def is_authenticated(self):
-        '''Required by Flask-Login'''
-        return True
-
     def is_active(self):
         '''Required by Flask-Login'''
         return self.active
+
+    def is_authenticated(self):
+        '''Required by Flask-Login'''
+        return True
 
     def is_anonymous(self):
         '''Required by Flask-Login'''
@@ -70,3 +66,16 @@ class User(db.Model):
             db.session.add(user)
             db.session.commit()
         return user
+
+
+class Role(db.Model):
+    id = db.Column(db.Integer(), primary_key=True)
+    name = db.Column(db.String(80), unique=True)
+    description = db.Column(db.String(255))
+
+    def __init__(self, name, description):
+        self.name = name
+        self.description = description
+
+    def __repr__(self):
+        return '< Role: {0} >'.format(self.name)

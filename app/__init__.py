@@ -1,29 +1,14 @@
 # -*- coding: utf-8 -*-
 
 from flask import Flask
+from flask.ext.principal import Principal
 from flask.ext.sqlalchemy import SQLAlchemy
-from flask.ext.login import LoginManager
 from flask_oauth import OAuth
-from itsdangerous import URLSafeTimedSerializer
 
 
 app = Flask(__name__)
 app.config.from_object('app.conf.Config')
-
 db = SQLAlchemy(app)
-
-
-# Setting up the LoginManager
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.session_protection = 'strong'
-
-# Where to redirect users when encountering a @login_required view
-login_manager.login_view = '/login'  # Has to be an absolute/relative URL
-
-# Login_serializer used to encryt and decrypt the cookie token for the remember
-# me option of Flask-Login
-login_serializer = URLSafeTimedSerializer(app.config.get('SECRET_KEY'))
 
 
 oauth = OAuth()
@@ -41,7 +26,12 @@ facebook = oauth.remote_app('facebook',
 
 
 from . import models, views
+from .core import get_login_manager, get_principals
 
+get_login_manager(app)
+
+# Activate Principal Extension
+principals = get_principals(app)
 
 @app.before_first_request
 def mk_db():

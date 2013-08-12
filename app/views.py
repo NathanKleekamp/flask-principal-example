@@ -1,12 +1,23 @@
 # -*- coding: utf-8 -*-
 
-from flask import render_template, redirect, url_for, request
+from flask import render_template, redirect, url_for, request, session, \
+    make_response, current_app
 from flask.ext.login import login_user, logout_user, current_user, \
-    login_required  # , fresh_login_required
+    login_required
+from flask.ext.principal import Identity, AnonymousIdentity, UserNeed, \
+    RoleNeed, identity_loaded, identity_changed, Permission
 
-from . import app, facebook, login_manager, login_serializer
-from .models import User, md5
+from . import app, db, facebook
+from .models import User, Role
 from .facebook import GraphAPI
+
+
+# Permissions
+a = db.session.query(Role).filter(Role.name == 'admin').first()
+admin_permission = Permission(RoleNeed(a.name))
+
+e = db.session.query(Role).filter(Role.name == 'editor').first()
+editor_permission = Permission(RoleNeed(e.name))
 
 
 @app.route('/')
@@ -24,27 +35,32 @@ def login():
 
 
 @app.route('/logout')
-@login_required  # logout() should always have this decorator from Flask-Login
+@login_required
 def logout():
-    # Tell Flask-Login the user's been logged out.
     logout_user()
+    for key in ['identity.name', 'identity.auth_type']:
+        session.pop(key, None)
+    identity_changed.send(app, identity=AnonymousIdentity())
     return redirect(url_for('index'))
 
 
 @app.route('/test')
-#@fresh_login_required  # See http://goo.gl/to0oEL
 @login_required
 def test():
     return render_template('test.html')
 
 
+@app.route('/admin')
+@login_required
+@admin_permission.require()
+def admin():
+    print(current_user)
+    return 'You are an admin'
+
+
 @app.route('/login/authorized', methods=['GET'])
 @facebook.authorized_handler
 def facebook_authorized(response):
-    '''
-    Get's Oauth token and User's info from Facebook, Flask-
-    Login logs in the user, and redirects to proper location.
-    '''
     if response is None:
         # In a real case, this should return error message/description
         return redirect(url_for('index'))
@@ -52,14 +68,18 @@ def facebook_authorized(response):
     next = request.args.get('next')
     token = response['access_token']
 
-    # Get identity from Facebook Graph
     me = GraphAPI.me(token).json()
 
-    # Get or create the user
     user = User.get_or_create(me['id'], me['name'], me['email'])
 
-    # Login with Flask-Login
+    if not user.is_active():
+        return 'Your account has been deactivated. Contact the admin for it \
+                to be reinstated.'
+
     login_user(user, remember=True)
+
+    identity_changed.send(current_app._get_current_object(),
+                          identity=Identity(user.id))
 
     if next:
         return redirect(next)
@@ -67,29 +87,17 @@ def facebook_authorized(response):
     return redirect(url_for('index'))
 
 
-@login_manager.user_loader
-def load_user(fb_id):
-    '''
-    This needs to return the user or None as required by Flask-Login
-    '''
-    return User.query.filter_by(fb_id=fb_id).first()
+@identity_loaded.connect_via(app)
+def on_identity_loaded(sender, identity):
+    if hasattr(current_user, 'id'):
+        identity.provides.add(UserNeed(current_user.id))
 
+    if hasattr(current_user, 'roles'):
+        for role in current_user.roles:
+            identity.provides.add(RoleNeed(role.name))
 
-@login_manager.token_loader
-def load_token(token):
-    '''
-    Load the secure token. See http://goo.gl/UvhIgI and http://goo.gl/niOYDQ
-    '''
-    # This allows us to enforce the exipry date of the token server side and
-    # not rely on the users cookie to exipre.
-    max_age = app.config["REMEMBER_COOKIE_DURATION"].total_seconds()
+    identity.user = current_user
 
-    # Decrypt the Security Token
-    data = login_serializer.loads(token, max_age=max_age)
-
-    # Locate the User
-    user = User.query.filter_by(fb_id=data[0]).first()
-
-    if user and md5(user.uuid) == data[1]:
-        return user
-    return None
+    print('on_identity_loaded: ', identity.provides)
+    print('on_identity_loaded: ', current_user)
+    print('on_identity_loaded: ', identity)
