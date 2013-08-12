@@ -28,9 +28,10 @@ facebook = oauth.remote_app('facebook',
 from . import models, views
 from .core import get_login_manager, get_principals
 
+# Activate Flask-Login
 get_login_manager(app)
 
-# Activate Principal Extension
+# Activate Flask-Principal Extension
 principals = get_principals(app)
 
 @app.before_first_request

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from flask import render_template, redirect, url_for, request, session, \
-    make_response, current_app
+    current_app
 from flask.ext.login import login_user, logout_user, current_user, \
     login_required
 from flask.ext.principal import Identity, AnonymousIdentity, UserNeed, \
@@ -54,8 +54,14 @@ def test():
 @login_required
 @admin_permission.require()
 def admin():
-    print(current_user)
     return 'You are an admin'
+
+
+@app.route('/edit')
+@login_required
+@editor_permission.require()
+def edit():
+    return 'You are an editor'
 
 
 @app.route('/login/authorized', methods=['GET'])
@@ -97,7 +103,3 @@ def on_identity_loaded(sender, identity):
             identity.provides.add(RoleNeed(role.name))
 
     identity.user = current_user
-
-    print('on_identity_loaded: ', identity.provides)
-    print('on_identity_loaded: ', current_user)
-    print('on_identity_loaded: ', identity)
